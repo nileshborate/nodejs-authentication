@@ -4,10 +4,18 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import mysql from 'mysql2/promise'; //mysql driver connect
 import { authenticate } from './middleware/auth.js';
+import { sequelize } from './models/index.js';
+import { User } from './models/user.model.js';
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+
+//throw if connection fails
+await sequelize.authenticate();
+
+//if you need migrations - create table automatically if not exists
+await sequelize.sync();
 
 /*const url = 'mongodb://localhost:27017/';
 mongoose
@@ -17,7 +25,6 @@ mongoose
   .then(() => console.log('MongoDB Connected.....'))
   .catch((err) => console.log('Error :', err));
 
-*/
 
 const pool = mysql.createPool({
   host: 'localhost',
@@ -28,6 +35,7 @@ const pool = mysql.createPool({
   waitForConnections: true,
   connectionLimit: 10,
 });
+*/
 
 //const JWT_SECRET = 'mySuperSecretKey';
 
@@ -49,11 +57,9 @@ app.get('/register', (req, res) => {
   res.render('register.ejs');
 });
 app.get('/profile', authenticate, async (req, res) => {
-  //const user = await User.findById(req.userId);
-  const [rows] = await pool.query('select * from users where id = ?', [
-    req.userId,
-  ]);
-  res.render('profile.ejs', { user: rows[0] });
+  const user = await User.findByPk(req.userId);
+
+  res.render('profile.ejs', { user });
 });
 app.get('/logout', (req, res) => {
   res.clearCookie('token', {
@@ -65,21 +71,17 @@ app.get('/logout', (req, res) => {
 
 //used after click on submit button
 app.post('/login', async (req, res) => {
-  console.log('Req body = ', req.body);
+  //console.log('Req body = ', req.body);
   const { email, password } = req.body;
 
-  //let user = await User.findOne({ email });
-  const [rows] = await pool.query('select * from users where email = ?', [
-    email,
-  ]);
+  let user = await User.findOne({ where: { email } });
 
   //console.log('User = ', user);
-  if (!rows.length) {
+  if (!user) {
     return res.status(401).send('Invalid Email Id');
   }
 
-  const user = rows[0];
-  console.log('User = ', user);
+  //console.log('User = ', user);
   const isValid = await bcrypt.compare(password, user.password);
   if (!isValid) {
     return res.status(401).send('Invalid Password');
@@ -99,27 +101,18 @@ app.post('/register', async (req, res) => {
   const { name, email, password } = req.body;
 
   //check if already registered
-  //const exists = await User.findOne({ email });
-  const [rows] = await pool.query('select id from users where email = ?', [
-    email,
-  ]);
+  const exists = await User.findOne({ where: { email } });
 
-  if (rows.length) {
+  if (exists) {
     return res.status(401).send('User Already Exists');
   }
 
   const hashedPassword = await bcrypt.hash(password, 10);
-  /*const db = await User.create({
+  await User.create({
     name,
     email,
     password: hashedPassword,
-  });*/
-
-  await pool.query('insert into users(name,email,password) values (?,?,?)', [
-    name,
-    email,
-    hashedPassword,
-  ]);
+  });
 
   res.redirect('/');
 });
